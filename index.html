@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>Space-Demolition-Derby</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>canvas { width: 80%; height: 80%; overflow:hidden; };
+			body { width: 100%; height: 100%;}
+		</style>
+	</head>
+	<body>
+	
+		<script src="assets/three.min.js"></script>
+		<script src="assets/ModelLoader.js"></script>
+		<script src="https://cdn.firebase.com/v0/firebase.js"></script>
+		<!--script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script-->
+		<script>
+
+			var SDD, ships = [], mygame, myship, shipsref,shipcount=1, eships = [],myCollisionCount = 0,
+				camera,
+				scene,
+				projector,
+				renderer,
+				modelLoader,
+				keys = [],
+				me, meTurnAngle = 0, meSpeed = 0, meCollision = false,
+				mouseX = 0, mouseY = 0,cameraAngle = 0,
+				gameStarted = false;
+
+			SDD = new Firebase("https://space-demolition-derby.firebaseio.com/ships");
+			
+			document.addEventListener('mousedown',onMouseDown,true);
+
+			function init() {
+				gameStarted = true;
+				if(shipsref === undefined) {
+					myship = {n: Math.random(), s: 0, x:0, y:0, z:0, a:0, r: 0};
+		      		shipsref = SDD.push(myship);
+					shipsref.onDisconnect().remove();
+				}
+				
+				//ships = SDD.child("ships")
+				var container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 100, window.innerWidth / window.innerHeight, .1, 1000 );
+				camera.position.set(0,10,0);
+				camera.up = new THREE.Vector3(0,0,0);
+				camera.lookAt(new THREE.Vector3(0,0,0));
+
+				scene = new THREE.Scene();
+				scene.add( camera );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				var floor = new THREE.Mesh(
+					new THREE.CubeGeometry(60, 2, 60),
+					new THREE.MeshLambertMaterial({color: 0xffaaff})
+				);
+				scene.add( floor );
+	
+				container.appendChild(renderer.domElement);
+
+				var light = new THREE.AmbientLight( 0xffeecc ); // soft white light
+				scene.add( light );
+
+				var plight = new THREE.PointLight( 0xFFFF00 );
+				plight.position.set( 0, 0, 0 );
+				scene.add( plight );
+
+				projector = new THREE.Projector();
+
+				modelLoader = new ModelLoader(scene);
+				modelLoader.onProggress = function(a,b) {
+					if(a/b*100 == 100) {
+						
+						document.addEventListener('keydown',onKeyDown,true);
+						document.addEventListener('keyup',onKeyUp,true);
+						document.addEventListener('mousemove',onMouseMove,true);
+
+						me = randomMove(modelLoader.get("me"));
+						me.n = myship.n;
+						me.scale.set(.5,.5,.5)
+						//me.position.y = 2;
+						//me.position.x = 0;
+						//me.position.z = 0;
+						me.r = '';
+						me.s = meSpeed;
+						me.b=false;
+						me.visibile = true;
+
+						for(var i = 0; i <9; i++) {
+							var e = modelLoader.get(""+(i)+"");
+							e.scale.set(.5,.5,.5)
+							e.position.y = 2;
+							e.position.x = 0;
+							e.position.z = 0;
+							e.visible = false;
+							ships[i] = e;
+						}
+						
+						SDD.on('child_added', function(snapshot) {
+							var _ship = snapshot.val();
+							createShip(_ship);
+			      		});
+
+			      		SDD.on('child_removed', function(snapshot) {
+							var _ship = snapshot.val();
+							for(var i = 0; i <9; i++) {
+								if(ships[i].n && ships[i].n === _ship.n) {
+									ships[i].visible = false;
+									ships[i].n = null;
+									shipcount--;
+								}
+							}
+			      		});
+
+			      		SDD.on('child_changed', function(snapshot) {
+							var _ship = snapshot.val();
+							if(me.n == _ship.n) {
+								me.position.x = _ship.x;
+								me.position.y = _ship.y;
+								me.position.z = _ship.z;
+								me.rotation.y = _ship.r;
+								meSpeed = _ship.s;
+								me.a = _ship.a;
+								me.b = _ship.b;
+								if(me.b === true) killShip(me);
+							} else {
+								for(var i = 0; i <shipcount; i++) {
+									if(ships[i].n && ships[i].n === _ship.n) {
+										ships[i].position.x = _ship.x;
+										ships[i].position.y = _ship.y;
+										ships[i].position.z = _ship.z;
+										ships[i].rotation.y = _ship.r;
+										ships[i].s = _ship.s;
+										ships[i].a = _ship.a;
+									}
+								}
+							}
+							
+			      		});
+
+						render();
+					}
+				};
+				modelLoader.load({name:"me", model:"assets/ship.js", texture:"assets/ship.png", material:"Lambert"});
+				modelLoader.load({name:"0", model:"assets/e1.js", texture:"assets/s1.png", material:"Lambert"});
+				modelLoader.load({name:"1", model:"assets/e2.js", texture:"assets/s2.png", material:"Lambert"});
+				modelLoader.load({name:"2", model:"assets/e3.js", texture:"assets/s3.png", material:"Lambert"});
+				modelLoader.load({name:"3", model:"assets/e4.js", texture:"assets/s4.png", material:"Lambert"});
+				modelLoader.load({name:"4", model:"assets/e5.js", texture:"assets/s5.png", material:"Lambert"});
+				modelLoader.load({name:"5", model:"assets/e6.js", texture:"assets/s6.png", material:"Lambert"});
+				modelLoader.load({name:"6", model:"assets/e7.js", texture:"assets/s7.png", material:"Lambert"});
+				modelLoader.load({name:"7", model:"assets/e8.js", texture:"assets/s8.png", material:"Lambert"});
+				modelLoader.load({name:"8", model:"assets/e9.js", texture:"assets/s9.png", material:"Lambert"});
+			}
+
+			function render() {
+				if(me.b) {
+					killShip(me);
+					return false;
+				}
+				requestAnimationFrame( render );
+				renderer.render( scene, camera );
+
+				camera.position.set(me.position.x,20,me.position.z);
+				camera.lookAt({x:me.position.x, y:me.position.y, z:me.position.z});
+
+				if (gameStarted) {
+					if(keys[38] && !meCollision) {
+						meSpeed = -.25;	
+					}else if(keys[40]) {
+						meSpeed =.25;
+					}else{
+						stopMoving();
+					}
+					if(keys[37]) {
+						turnRight();
+					}
+					if(keys[39]) {
+						turnLeft();
+					}
+
+					for(var i = 0; i<shipcount; i++ ){
+						if(Math.sqrt((me.position.x-ships[i].position.x)*(me.position.x-ships[i].position.x) + (me.position.z-ships[i].position.z)*(me.position.z-ships[i].position.z))<5) {
+							meCollision = true;
+						}
+					}
+
+					if(meCollision) {
+						me.position.x -= Math.sin(meTurnAngle/180*Math.PI)*.1;
+					} else {
+						me.position.x += Math.sin(meTurnAngle/180*Math.PI)*meSpeed;
+					}
+						
+					if(meCollision) {
+						me.position.z -= Math.cos(meTurnAngle/180*Math.PI)*meSpeed;
+					} else {
+						me.position.z += Math.cos(meTurnAngle/180*Math.PI)*meSpeed;
+					}
+					if(meCollision && !keys[40]) {
+						myCollisionCount++;
+					}
+
+					me.rotation.y = meTurnAngle/180*Math.PI;
+					
+					meCollision=false;
+
+					var xmax = 23,
+						xmin = 1 - xmax,
+						zmax = 23,
+						zmin = 1 - zmax;
+
+					if(me.position.x>xmax)me.position.x = xmax;
+					if(me.position.x<xmin)me.position.x = xmin;
+					if(me.position.z>zmax)me.position.z = zmax;
+					if(me.position.z<zmin)me.position.z = zmin;
+
+					updateShip(me);
+
+				}
+			}
+
+			function onMouseMove( event ) {
+				event.preventDefault();
+			}
+
+			function onMouseDown( event ) {
+				event.preventDefault();
+				if(gameStarted === false) init();
+			}
+
+			function onKeyDown(event) {
+				keys[event.keyCode] = true;
+			}
+			function onKeyUp(event) {
+				keys[event.keyCode] = false;
+			}
+
+			function turnRight () {
+				meSpeed = 0;
+				meTurnAngle+=3;
+			}
+			function turnLeft () {
+				meSpeed = 0;
+				meTurnAngle-=3;
+			}
+			function stopMoving () {
+				meSpeed = 0;
+			}
+			function createShip(_ship) {
+				if(_ship.n === me.n) return false;
+				var mesh = new THREE.Mesh( modelLoader.get("7").geometry, modelLoader.get("7").material );
+				ships[shipcount] = mesh;
+				ships[shipcount].scale.set(.5, .5, .5);
+				ships[shipcount].n = _ship.n;
+				ships[shipcount].position.x = _ship.x;
+				ships[shipcount].position.y = _ship.y;
+				ships[shipcount].position.z = _ship.z;
+				if(ships[shipcount].rotation)
+					ships[shipcount].rotation.y = _ship.r;
+				else ships[shipcount].rotation.y = _ship.r;
+				ships[shipcount].s = _ship.s;
+				ships[shipcount].a = _ship.a;
+				ships[shipcount].b = _ship.b;
+				scene.add(ships[shipcount]);
+				shipcount++;
+				
+				return mesh;
+			}
+			function randomMove(_ship) {
+				_ship.position.y = 2;
+				_ship.position.x = Math.random()*60-30
+				_ship.position.z = Math.random()*60-30;	
+				return _ship;
+			}
+      		function updateShip(_ship) {
+      			shipsref.update({
+      				n: _ship.n,
+      				s: meSpeed,
+      				x: _ship.position.x,
+      				y: _ship.position.y,
+      				z: _ship.position.z,
+      				r: _ship.rotation.y,
+      				a: '',
+      				b: false
+      			})
+      		}
+      		function killShip(_ship) {
+      			_ship.visible = !_ship.b;
+      			shipsref.update({
+      				n: _ship.n,
+      				s: meSpeed,
+      				x: _ship.position.x,
+      				y: _ship.position.y,
+      				z: _ship.position.z,
+      				r: _ship.rotation.y,
+      				a: '',
+      				b: true
+      			});
+      			for ( i = 0; i < scene.children.length; i ++ ) {
+					var object = scene.children[ i ];
+					if ( object != camera) {
+				 		//scene.remove(object);
+				}
+}
+      		}
+
+
+KEY_CODES = {
+  32: 'space',
+  37: 'left',
+  38: 'up',
+  39: 'right',
+  40: 'down',
+  71: 'g',
+  72: 'h',
+  77: 'm',
+}
+
+			
+		</script>
+	</body>
+</html>
